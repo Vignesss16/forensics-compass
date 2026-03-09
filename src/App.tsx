@@ -3,7 +3,13 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
+import { InvestigationProvider } from "@/contexts/InvestigationContext";
+import Layout from "@/components/Layout";
+import UploadPage from "@/pages/UploadPage";
+import DashboardPage from "@/pages/DashboardPage";
+import AIChatPage from "@/pages/AIChatPage";
+import NetworkGraphPage from "@/pages/NetworkGraphPage";
+import ReportPage from "@/pages/ReportPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -13,13 +19,20 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <InvestigationProvider>
+        <BrowserRouter>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<UploadPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/chat" element={<AIChatPage />} />
+              <Route path="/graph" element={<NetworkGraphPage />} />
+              <Route path="/report" element={<ReportPage />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Layout>
+        </BrowserRouter>
+      </InvestigationProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
