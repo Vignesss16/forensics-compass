@@ -1,12 +1,14 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Upload, LayoutDashboard, MessageSquare, Network, FileText, Shield } from "lucide-react";
+import { Upload, LayoutDashboard, MessageSquare, Network, FileText, Shield, Image, Clock } from "lucide-react";
 
 const navItems = [
   { to: "/", label: "Upload", icon: Upload },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/chat", label: "AI Search", icon: MessageSquare },
   { to: "/graph", label: "Network", icon: Network },
+  { to: "/timeline", label: "Timeline", icon: Clock },
+  { to: "/images", label: "Media", icon: Image },
   { to: "/report", label: "Report", icon: FileText },
 ];
 

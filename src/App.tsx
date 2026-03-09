@@ -10,6 +10,8 @@ import DashboardPage from "@/pages/DashboardPage";
 import AIChatPage from "@/pages/AIChatPage";
 import NetworkGraphPage from "@/pages/NetworkGraphPage";
 import ReportPage from "@/pages/ReportPage";
+import ImagesPage from "@/pages/ImagesPage";
+import TimelinePage from "@/pages/TimelinePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +29,8 @@ const App = () => (
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/chat" element={<AIChatPage />} />
               <Route path="/graph" element={<NetworkGraphPage />} />
+              <Route path="/timeline" element={<TimelinePage />} />
+              <Route path="/images" element={<ImagesPage />} />
               <Route path="/report" element={<ReportPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

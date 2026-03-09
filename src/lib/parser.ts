@@ -31,7 +31,8 @@ function parseJSON(content: string): InvestigationData {
       const record = normalizeRecord(item);
       if (record) records.push(record);
     }
-  } else if (raw.chats || raw.calls || raw.contacts || raw.images) {
+  } else if (raw.chats || raw.calls || raw.contacts || raw.images || raw.messages || raw.call_logs || raw.whatsapp_messages || raw.media_files) {
+    // Handle sample data format
     if (raw.chats) raw.chats.forEach((c: any) => {
       const r = normalizeRecord({ ...c, type: "chat" });
       if (r) records.push(r);
@@ -45,6 +46,28 @@ function parseJSON(content: string): InvestigationData {
       if (r) records.push(r);
     });
     if (raw.images) raw.images.forEach((c: any) => {
+      const r = normalizeRecord({ ...c, type: "image" });
+      if (r) records.push(r);
+    });
+
+    // Handle UFDR format with different field names
+    if (raw.messages) raw.messages.forEach((c: any) => {
+      const r = normalizeRecord({ ...c, type: "chat" });
+      if (r) records.push(r);
+    });
+    if (raw.call_logs) raw.call_logs.forEach((c: any) => {
+      const r = normalizeRecord({ ...c, type: "call" });
+      if (r) records.push(r);
+    });
+    
+    // Handle WhatsApp specific format
+    if (raw.whatsapp_messages) raw.whatsapp_messages.forEach((c: any) => {
+      const r = normalizeRecord({ ...c, type: "chat", platform: "WhatsApp" });
+      if (r) records.push(r);
+    });
+    
+    // Handle media files (UFDR format)
+    if (raw.media_files) raw.media_files.forEach((c: any) => {
       const r = normalizeRecord({ ...c, type: "image" });
       if (r) records.push(r);
     });
@@ -88,7 +111,7 @@ function parseXML(content: string): InvestigationData {
 function normalizeRecord(item: any): ForensicRecord | null {
   const type = item.type?.toLowerCase();
 
-  if (type === "chat" || type === "message" || item.message) {
+  if (type === "chat" || type === "message" || item.message || item.text) {
     return {
       type: "chat",
       from: item.from || item.sender || item.source || "Unknown",
@@ -102,11 +125,11 @@ function normalizeRecord(item: any): ForensicRecord | null {
   if (type === "call") {
     return {
       type: "call",
-      from: item.from || item.caller || "Unknown",
-      to: item.to || item.callee || "Unknown",
+      from: item.from || item.caller || item.phone_a || "Unknown",
+      to: item.to || item.callee || item.phone_b || "Unknown",
       duration: parseInt(item.duration) || 0,
-      timestamp: item.timestamp || item.date || "",
-      direction: item.direction || "outgoing",
+      timestamp: item.timestamp || item.date || item.call_time || "",
+      direction: item.direction || item.call_direction || "outgoing",
     } as CallRecord;
   }
 
@@ -120,10 +143,10 @@ function normalizeRecord(item: any): ForensicRecord | null {
     } as ContactRecord;
   }
 
-  if (type === "image" || type === "photo") {
+  if (type === "image" || type === "photo" || type === "audio" || type === "video") {
     return {
       type: "image",
-      filename: item.filename || item.name || item.file || "unknown",
+      filename: item.filename || item.name || item.file || item.file_name || "unknown",
       timestamp: item.timestamp || item.date || "",
       location: item.lat && item.lng ? { lat: parseFloat(item.lat), lng: parseFloat(item.lng) } : undefined,
       device: item.device || "",

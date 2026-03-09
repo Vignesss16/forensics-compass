@@ -1,90 +1,155 @@
-import { useMemo, useRef, useCallback } from "react";
+import { useMemo, useRef, useCallback, useState } from "react";
 import { useInvestigation } from "@/contexts/InvestigationContext";
 import { Navigate } from "react-router-dom";
 import ForceGraph2D from "react-force-graph-2d";
 import { CRYPTO_WALLET_PATTERNS } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Network } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+
+interface Node {
+  id: string;
+  label: string;
+  type: string;
+  val: number;
+  x?: number;
+  y?: number;
+}
+
+interface Link {
+  source: string | Node;
+  target: string | Node;
+  label: string;
+  count?: number;
+}
 
 export default function NetworkGraphPage() {
   const { data } = useInvestigation();
-  const graphRef = useRef<any>();
+  const graphRef = useRef<any | null>(null);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [showPerson, setShowPerson] = useState(true);
+  const [showWallet, setShowWallet] = useState(true);
+  const [showPhone, setShowPhone] = useState(true);
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
 
   const graphData = useMemo(() => {
     if (!data) return { nodes: [], links: [] };
 
     const nodesMap = new Map<string, { id: string; label: string; type: string; val: number }>();
-    const links: { source: string; target: string; label: string }[] = [];
+    const linksMap = new Map<string, { source: string; target: string; label: string; count: number }>();
+    const contactPhones = new Set<string>();
 
-    const addNode = (id: string, label: string, type: string) => {
-      if (!nodesMap.has(id)) {
-        nodesMap.set(id, { id, label, type, val: 1 });
-      } else {
-        nodesMap.get(id)!.val += 1;
-      }
-    };
-
-    // Contacts as persons
+    // Add contacts as persons
     data.contacts.forEach(c => {
       addNode(c.phone, c.name || c.phone, "person");
+      contactPhones.add(c.phone);
     });
 
-    // Chats: add phone nodes and links
+    // Process chats
     data.chats.forEach(c => {
-      addNode(c.from, c.from, "phone");
-      addNode(c.to, c.to, "phone");
-      links.push({ source: c.from, target: c.to, label: "chat" });
+      // Filter by date if range is set
+      if (dateRange.start && new Date(c.timestamp) < new Date(dateRange.start)) return;
+      if (dateRange.end && new Date(c.timestamp) > new Date(dateRange.end)) return;
 
-      // Check for crypto wallets in message
+      addNode(c.from, c.from, contactPhones.has(c.from) ? "person" : "phone");
+      addNode(c.to, c.to, contactPhones.has(c.to) ? "person" : "phone");
+      addLink(c.from, c.to, "chat");
+
+      // Check for crypto wallets
       CRYPTO_WALLET_PATTERNS.forEach(p => {
         const matches = c.message.match(p);
         if (matches) {
           matches.forEach(w => {
             const wId = `wallet:${w.slice(0, 10)}`;
             addNode(wId, w.slice(0, 12) + "...", "wallet");
-            links.push({ source: c.from, target: wId, label: "wallet" });
+            addLink(c.from, wId, "wallet");
           });
         }
       });
     });
 
-    // Calls
+    // Process calls
     data.calls.forEach(c => {
-      addNode(c.from, c.from, "phone");
-      addNode(c.to, c.to, "phone");
-      links.push({ source: c.from, target: c.to, label: "call" });
+      // Filter by date if range is set
+      if (dateRange.start && new Date(c.timestamp) < new Date(dateRange.start)) return;
+      if (dateRange.end && new Date(c.timestamp) > new Date(dateRange.end)) return;
+
+      addNode(c.from, c.from, contactPhones.has(c.from) ? "person" : "phone");
+      addNode(c.to, c.to, contactPhones.has(c.to) ? "person" : "phone");
+      addLink(c.from, c.to, "call");
     });
 
-    // Merge contact names onto phone nodes
+    // Update contact names
     data.contacts.forEach(c => {
       if (nodesMap.has(c.phone)) {
         nodesMap.get(c.phone)!.label = c.name || c.phone;
-        nodesMap.get(c.phone)!.type = "person";
       }
     });
 
-    // Deduplicate links
-    const linkSet = new Set<string>();
-    const dedupedLinks = links.filter(l => {
-      const key = `${l.source}-${l.target}-${l.label}`;
-      const rev = `${l.target}-${l.source}-${l.label}`;
-      if (linkSet.has(key) || linkSet.has(rev)) return false;
-      linkSet.add(key);
+    const nodes = Array.from(nodesMap.values());
+    const links = Array.from(linksMap.values());
+
+    function addNode(id: string, label: string, type: string) {
+      if (!nodesMap.has(id)) {
+        nodesMap.set(id, { id, label, type, val: 1 });
+      } else {
+        nodesMap.get(id)!.val += 1;
+      }
+    }
+
+    function addLink(source: string, target: string, label: string) {
+      const key = `${source}-${target}-${label}`;
+      const rev = `${target}-${source}-${label}`;
+      if (linksMap.has(key)) {
+        linksMap.get(key)!.count += 1;
+      } else if (linksMap.has(rev)) {
+        linksMap.get(rev)!.count += 1;
+      } else {
+        linksMap.set(key, { source, target, label, count: 1 });
+      }
+    }
+
+    return { nodes, links };
+  }, [data, dateRange]);
+
+  const filteredData = useMemo(() => {
+    const filteredNodes = graphData.nodes.filter(n => {
+      if (n.type === "person" && !showPerson) return false;
+      if (n.type === "wallet" && !showWallet) return false;
+      if (n.type === "phone" && !showPhone) return false;
       return true;
     });
 
-    return { nodes: Array.from(nodesMap.values()), links: dedupedLinks };
-  }, [data]);
+    const nodeIds = new Set(filteredNodes.map(n => n.id));
+    const filteredLinks = graphData.links.filter(l => {
+      const sourceId = typeof l.source === "string" ? l.source : (l.source as Node).id;
+      const targetId = typeof l.target === "string" ? l.target : (l.target as Node).id;
+      return nodeIds.has(sourceId) && nodeIds.has(targetId);
+    });
 
-  const nodeColor = useCallback((node: any) => {
+    return { nodes: filteredNodes, links: filteredLinks };
+  }, [graphData, showPerson, showWallet, showPhone]);
+
+  const nodeColor = useCallback((node: Node) => {
     switch (node.type) {
-      case "person": return "hsl(185, 80%, 50%)";
-      case "wallet": return "hsl(160, 70%, 45%)";
-      default: return "hsl(215, 15%, 50%)";
+      case "person":
+        return "hsl(185, 80%, 50%)";
+      case "wallet":
+        return "hsl(160, 70%, 45%)";
+      case "phone":
+        return "hsl(215, 15%, 50%)";
+      default:
+        return "hsl(215, 15%, 50%)";
     }
   }, []);
 
-  const linkColor = useCallback((link: any) => {
+  const linkColor = useCallback((link: Link) => {
     return link.label === "wallet" ? "hsl(160, 70%, 45%)" : "hsl(220, 20%, 25%)";
   }, []);
 
@@ -92,53 +157,157 @@ export default function NetworkGraphPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="p-4 border-b border-border flex items-center justify-between">
+      <div className="p-4 border-b border-border flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-lg font-bold font-mono text-primary cyber-text-glow flex items-center gap-2">
             <Network className="h-5 w-5" /> Link Analysis
           </h1>
           <p className="text-xs text-muted-foreground mt-1">
-            {graphData.nodes.length} entities · {graphData.links.length} connections
+            {filteredData.nodes.length} entities · {filteredData.links.length} connections
           </p>
         </div>
+
+        {/* Legend */}
         <div className="flex gap-2">
-          <Badge variant="outline" className="font-mono text-[10px]">
-            <span className="h-2 w-2 rounded-full bg-primary inline-block mr-1" /> Person
+          <Badge variant="outline" className="font-mono text-[10px] border-cyan-400 text-cyan-300">
+            <span className="h-2 w-2 rounded-full bg-cyan-400 inline-block mr-1" /> Person
           </Badge>
-          <Badge variant="outline" className="font-mono text-[10px]">
-            <span className="h-2 w-2 rounded-full bg-accent inline-block mr-1" /> Wallet
+          <Badge variant="outline" className="font-mono text-[10px] border-teal-400 text-teal-300">
+            <span className="h-2 w-2 rounded-full bg-teal-400 inline-block mr-1" /> Wallet
           </Badge>
-          <Badge variant="outline" className="font-mono text-[10px]">
-            <span className="h-2 w-2 rounded-full bg-muted-foreground inline-block mr-1" /> Phone
+          <Badge variant="outline" className="font-mono text-[10px] border-gray-400 text-gray-300">
+            <span className="h-2 w-2 rounded-full bg-gray-400 inline-block mr-1" /> Phone
           </Badge>
         </div>
       </div>
 
+      {/* Controls */}
+      <div className="p-4 border-b border-border space-y-3">
+        {/* Type Filters */}
+        <div className="flex gap-6 flex-wrap">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox checked={showPerson} onCheckedChange={(v) => setShowPerson(!!v)} />
+            <span className="font-mono">Show Persons</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox checked={showWallet} onCheckedChange={(v) => setShowWallet(!!v)} />
+            <span className="font-mono">Show Wallets</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox checked={showPhone} onCheckedChange={(v) => setShowPhone(!!v)} />
+            <span className="font-mono">Show Phones</span>
+          </label>
+        </div>
+
+        {/* Date Range Filter */}
+        <div className="flex gap-4 flex-wrap items-end">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">From Date</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              className="bg-secondary border border-border rounded px-2 py-1 text-xs font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">To Date</label>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              className="bg-secondary border border-border rounded px-2 py-1 text-xs font-mono"
+            />
+          </div>
+          {(dateRange.start || dateRange.end) && (
+            <button
+              onClick={() => setDateRange({ start: "", end: "" })}
+              className="px-2 py-1 text-xs rounded border border-border hover:border-primary text-muted-foreground hover:text-primary"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Graph */}
       <div className="flex-1 bg-background">
         <ForceGraph2D
           ref={graphRef}
-          graphData={graphData}
+          graphData={filteredData}
           nodeColor={nodeColor}
-          nodeLabel={(node: any) => `${node.label} (${node.type})`}
+          nodeLabel={(node: Node) => `${node.label} (${node.type})`}
           nodeRelSize={6}
-          nodeVal={(node: any) => Math.max(node.val, 2)}
+          nodeVal={(node: Node) => Math.max(node.val * 1.5, 3)}
           linkColor={linkColor}
           linkWidth={1.5}
           linkDirectionalArrowLength={4}
           linkDirectionalArrowRelPos={1}
+          linkLabel={(link: Link) => `${link.label} (${link.count || 1})`}
           backgroundColor="hsl(220, 25%, 6%)"
           nodeCanvasObjectMode={() => "after"}
-          nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          onNodeClick={(node: Node) => setSelectedNode(node)}
+          nodeCanvasObject={(node: Node, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const label = node.label || node.id;
             const fontSize = Math.max(10 / globalScale, 2);
             ctx.font = `${fontSize}px JetBrains Mono, monospace`;
             ctx.textAlign = "center";
             ctx.textBaseline = "top";
-            ctx.fillStyle = "hsl(200, 20%, 75%)";
+            ctx.fillStyle = "hsl(50, 100%, 70%)";
             ctx.fillText(label.length > 14 ? label.slice(0, 14) + ".." : label, node.x!, node.y! + 8);
           }}
         />
       </div>
+
+      {/* Node Details Modal */}
+      {selectedNode && (
+        <Dialog open={!!selectedNode} onOpenChange={() => setSelectedNode(null)}>
+          <DialogContent className="max-w-2xl max-h-96 overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="font-mono">{selectedNode.label}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">ID</p>
+                  <p className="text-sm font-mono break-all">{selectedNode.id}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Type</p>
+                  <Badge className="w-fit">{selectedNode.type}</Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Connections</p>
+                  <p className="text-sm font-mono">{selectedNode.val}</p>
+                </div>
+              </div>
+
+              {/* Related Messages */}
+              {selectedNode.type !== "wallet" && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Related Messages</p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {data.chats
+                      .filter(c => c.from === selectedNode.id || c.to === selectedNode.id)
+                      .slice(0, 10)
+                      .map((chat, i) => (
+                        <div key={i} className="bg-secondary rounded p-2 text-xs">
+                          <p className="text-muted-foreground mb-1">
+                            {chat.from} → {chat.to}
+                          </p>
+                          <p className="text-foreground break-words">{chat.message.slice(0, 100)}</p>
+                          <p className="text-[10px] text-muted-foreground mt-1">
+                            {new Date(chat.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

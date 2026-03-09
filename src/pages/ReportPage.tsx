@@ -16,6 +16,66 @@ export default function ReportPage() {
 
   if (!data) return <Navigate to="/" replace />;
 
+  const exportJSON = () => {
+    const reportData = {
+      timestamp: new Date().toISOString(),
+      summary,
+      statistics: {
+        totalChats: data.chats.length,
+        totalCalls: data.calls.length,
+        totalContacts: data.contacts.length,
+        totalImages: data.images.length,
+        suspiciousItems: suspiciousItems.length,
+        foreignNumbers: foreignNumbers.length,
+        cryptoWallets: cryptoWallets.length,
+      },
+      suspiciousMessages: suspiciousItems.map(item => ({
+        ...item.record,
+        reason: item.reason,
+        severity: item.severity,
+      })),
+      foreignNumbers,
+      cryptoWallets,
+    };
+
+    const element = document.createElement("a");
+    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(JSON.stringify(reportData, null, 2)));
+    element.setAttribute("download", `forensix_report_${Date.now()}.json`);
+    element.style.display = "none";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    toast.success("JSON report exported");
+  };
+
+  const exportCSV = () => {
+    const csvContent = [
+      ["Type", "From", "To", "Message/Details", "Timestamp", "Severity"],
+      ...suspiciousItems.map(item => {
+        const record = item.record as any;
+        return [
+          record.type,
+          record.from || "-",
+          record.to || "-",
+          record.message || record.name || "-",
+          record.timestamp || "-",
+          item.severity,
+        ];
+      }),
+    ]
+      .map(row => row.map(cell => `"${(cell || "").toString().replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const element = document.createElement("a");
+    element.setAttribute("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent));
+    element.setAttribute("download", `forensix_report_${Date.now()}.csv`);
+    element.style.display = "none";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    toast.success("CSV report exported");
+  };
+
   const generatePDF = async () => {
     setGenerating(true);
     try {
@@ -143,6 +203,26 @@ export default function ReportPage() {
         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         {generating ? "Generating Report..." : "Download PDF Report"}
       </Button>
+
+      {/* Export Options */}
+      <div className="grid grid-cols-2 gap-3">
+        <Button 
+          onClick={() => exportJSON()} 
+          variant="outline" 
+          className="font-mono gap-2"
+        >
+          <Download className="h-4 w-4" />
+          Export JSON
+        </Button>
+        <Button 
+          onClick={() => exportCSV()} 
+          variant="outline" 
+          className="font-mono gap-2"
+        >
+          <Download className="h-4 w-4" />
+          Export CSV
+        </Button>
+      </div>
 
       {/* Preview of flagged items */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card rounded-lg cyber-border p-5">
